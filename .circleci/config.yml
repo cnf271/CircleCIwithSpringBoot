@@ -15,7 +15,14 @@ jobs:
           name: Setup common environment variables
           command: |
             echo 'export ECR_REPOSITORY_NAME="${AWS_RESOURCE_NAME_PREFIX}"' >> $BASH_ENV
-            echo 'export FULL_IMAGE_NAME="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY_NAME}:latest"' >> $BASH_ENV
+
+            if [ "${CIRCLE_BRANCH}" == "master" ]
+            then
+              echo 'export FULL_IMAGE_NAME="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY_NAME}:latest-qa"' >> $BASH_ENV
+            elif [ "${CIRCLE_BRANCH}" == "release" ]
+            then
+              echo 'export FULL_IMAGE_NAME="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY_NAME}:latest-prod"' >> $BASH_ENV
+            fi
       - run:
           name: Install dependencies for project
           command: gradle assemble
@@ -35,6 +42,27 @@ jobs:
           command: |
             eval $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
             docker push $FULL_IMAGE_NAME
+  update:
+    docker:
+      - image: circleci/openjdk:8-jdk
+    steps:
+      - run:
+          name: Install dependencies for AWS
+          command: |
+            sudo apt-get update
+            sudo apt-get -y -qq install awscli
+            sudo apt-get install python3-pip
+            sudo pip3 install --upgrade awscli
+      - run:
+          name: Force Update Existing Service
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]
+            then
+               aws ecs update-service --cluster qa-ecs-cluster --service search-ecs-service-qa --force-new-deployment
+            elif [ "${CIRCLE_BRANCH}" == "release" ]
+            then
+              aws ecs update-service --cluster prod-ecs-cluster --service search-ecs-service-prod --force-new-deployment
+            fi
 
 workflows:
   build-deploy-qa:
@@ -43,3 +71,21 @@ workflows:
           filters:
             branches:
               only: master
+      - update:
+          requires:
+            - build_and_deploy
+          filters:
+            branches:
+              only: master
+  build-deploy-prod:
+    jobs:
+      - build_and_deploy:
+          filters:
+            branches:
+              only: release
+      - update:
+          requires:
+            - build_and_deploy
+          filters:
+            branches:
+              only: release
