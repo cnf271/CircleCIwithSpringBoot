@@ -1,4 +1,4 @@
-# CircleCIwithSpringBoot
+# CircleCI with SpringBoot
 **CircleCI Integration with Springboot - Deploying a Spring Boot Application to AWS ECR with CircleCI**
 
 
